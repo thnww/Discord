@@ -1,3 +1,5 @@
+#--By LeMinh 
+#--Scoure in http://dsc.gg/thncommunity
 """
 discord_quest_auto.py - Tự động hoàn thành Discord Quests (schema mới 2026).
 
@@ -51,10 +53,8 @@ UA = (
     "Electron/32.2.7 Safari/537.36"
 )
 
-# Discord ẩn hết quest nếu client_build_number quá cũ (339450 -> 0 quest,
-# 380000 -> 33 quest). Script tự dò build cho tới khi thấy quest.
 BUILD_CANDIDATES: list[tuple[int, str]] = [
-    (410000, "1.0.9195"),   # thấy cả quest WATCH_VIDEO
+    (410000, "1.0.9195"),
     (400000, "1.0.9192"),
     (380000, "1.0.9186"),
     (339450, "1.0.9175"),
@@ -71,23 +71,17 @@ TASK_LABELS = {
     "ACHIEVEMENT_IN_ACTIVITY": "Thành tích activity",
 }
 
-# Quest xem video dùng /video-progress (timestamp = vị trí video, ms, <= 600000)
 VIDEO_TASKS = {"WATCH_VIDEO", "WATCH_VIDEO_ON_MOBILE"}
 
 try:
     from curl_cffi import requests as _cffi
-except Exception:  # pragma: no cover
+except Exception:
     _cffi = None
 
 try:
     import requests as _requests
-except Exception:  # pragma: no cover
+except Exception:
     _requests = None
-
-
-# --------------------------------------------------------------------------- #
-# HTTP
-# --------------------------------------------------------------------------- #
 
 def _b64(obj: object) -> str:
     return base64.b64encode(json.dumps(obj, separators=(",", ":")).encode()).decode()
@@ -198,11 +192,6 @@ class Api:
 
         return status, payload
 
-
-# --------------------------------------------------------------------------- #
-# Đọc dữ liệu quest (schema task_config_v2)
-# --------------------------------------------------------------------------- #
-
 def _cfg(quest: dict) -> dict:
     return quest.get("config") or quest.get("quest_config") or {}
 
@@ -272,7 +261,6 @@ def progress_of(quest: dict) -> float:
         val = entry.get("value")
         if isinstance(val, (int, float)):
             return float(val)
-    # fallback: lấy value lớn nhất trong mọi entry
     best = 0.0
     for item in prog.values():
         if isinstance(item, dict) and isinstance(item.get("value"), (int, float)):
@@ -294,11 +282,6 @@ def claim_platform(quest: dict) -> int:
     platforms = (_cfg(quest).get("rewards_config") or {}).get("platforms") or []
     return int(platforms[0]) if platforms and isinstance(platforms[0], int) else 0
 
-
-# --------------------------------------------------------------------------- #
-# Gọi API
-# --------------------------------------------------------------------------- #
-
 def list_quests(api: Api) -> list[dict]:
     status, payload = api.call("GET", "/quests/@me")
     if status != 200:
@@ -307,7 +290,6 @@ def list_quests(api: Api) -> list[dict]:
 
     quests = [q for q in (payload.get("quests") or []) if isinstance(q, dict)]
 
-    # Rỗng có thể do build quá cũ -> thử build khác (chỉ 1 lần).
     if not quests and not api.probed:
         api.probed = True
         for build in BUILD_CANDIDATES:
@@ -357,7 +339,6 @@ def heartbeat(api: Api, quest: dict) -> bool:
     )
     if status in (200, 201, 204):
         return True
-    # fallback body tối giản
     status, _ = api.call("POST", f"/quests/{qid}/heartbeat", {})
     return status in (200, 201, 204)
 
@@ -385,7 +366,7 @@ def complete_video(api: Api, quest: dict) -> bool:
         status, _ = api.call("POST", f"/quests/{qid}/video-progress", {"timestamp": ts})
 
         if status == 404:
-            return False  # không phải quest video
+            return False
         if status in (200, 201, 204):
             fails = 0
             time.sleep(0.5)
@@ -422,11 +403,6 @@ def claim(api: Api, quest: dict) -> str:
     print(f"    ! claim {qid} lỗi {status}: {payload.get('message') or payload}")
     return "error"
 
-
-# --------------------------------------------------------------------------- #
-# In bảng
-# --------------------------------------------------------------------------- #
-
 def print_quests(quests: list[dict]) -> None:
     if not quests:
         print("Không có quest nào.")
@@ -455,10 +431,6 @@ def print_quests(quests: list[dict]) -> None:
         print(f"{idx:<3}{name:<34}{kind:<20}{state:<20}{cur:.0f}/{target:.0f} ({pct:.0f}%)")
 
 
-# --------------------------------------------------------------------------- #
-# Chạy
-# --------------------------------------------------------------------------- #
-
 def run(api: Api, quests: list[dict], interval: float, timeout: float) -> None:
     work = [
         q for q in quests
@@ -468,7 +440,6 @@ def run(api: Api, quests: list[dict], interval: float, timeout: float) -> None:
         print("Không có quest nào còn hạn để làm.")
         return
 
-    # 1. enroll
     print("Enroll:")
     for quest in work:
         if not is_enrolled(quest):
@@ -476,12 +447,10 @@ def run(api: Api, quests: list[dict], interval: float, timeout: float) -> None:
             print(f"  {'+' if ok else '-'} {quest_name(quest)}")
             time.sleep(0.6)
 
-    # refresh sau enroll
     quests = list_quests(api)
     work = [q for q in work if not is_claimed(q)]
     work = [next((x for x in quests if x["id"] == q["id"]), q) for q in work]
 
-    # 2. quest xem video: /video-progress xong trong vài giây
     videos = [q for q in work
               if task_type(q) in VIDEO_TASKS and not is_completed(q)]
     if videos:
@@ -492,7 +461,6 @@ def run(api: Api, quests: list[dict], interval: float, timeout: float) -> None:
         fresh = {q["id"]: q for q in list_quests(api)}
         work = [fresh.get(q["id"], q) for q in work]
 
-    # 3. beat song song tới khi xong
     start = time.time()
     rounds = 0
     print(f"\nChạy {len(work)} quest song song (tối đa {timeout:.0f}s):")
@@ -522,7 +490,6 @@ def run(api: Api, quests: list[dict], interval: float, timeout: float) -> None:
     fresh = {q["id"]: q for q in list_quests(api)}
     work = [fresh.get(q["id"], q) for q in work]
 
-    # 4. claim
     print("\nClaim:")
     captcha_needed = []
     for quest in work:
